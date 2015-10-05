@@ -2,8 +2,8 @@ package main
 
 import (
 	"github.com/darvik80/fsevents/fsevents"
-	"time"
 	"github.com/darvik80/fsevents/log"
+	"time"
 )
 
 func main() {
@@ -20,13 +20,13 @@ func main() {
 		var opened = true
 		for opened {
 			select {
-			case event, more := <- events:
+			case event, more := <-events:
 				if more {
 					if event.IsCreate() {
 						log.Debugf("Created: %s", event.Path())
-					} else if (event.IsDelete()) {
+					} else if event.IsDelete() {
 						log.Debugf("Deleted: %s", event.Path())
-					} else if (event.IsRename()) {
+					} else if event.IsRename() {
 						log.Debugf("Renamed: %s", event.Path())
 					}
 					//else if (event.IsModify()) {
@@ -35,7 +35,7 @@ func main() {
 				} else {
 					opened = false
 				}
-			case <- time.After(time.Minute*30):
+			case <-time.After(time.Minute * 30):
 				done <- true
 			}
 		}

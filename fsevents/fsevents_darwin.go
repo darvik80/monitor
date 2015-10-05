@@ -1,36 +1,35 @@
 package fsevents
 
 import (
-	"syscall"
-	"os"
 	"github.com/dropbox/godropbox/errors"
+	"os"
 	"path/filepath"
+	"syscall"
 
-	"io/ioutil"
 	"github.com/darvik80/fsevents/log"
+	"io/ioutil"
 )
 
 // +build darwin
 
 const (
-	Note_DELETE	= 0x00000001		/* vnode was removed */
-	Note_WRITE = 0x00000002		/* data contents changed */
-	Note_EXTEND = 0x00000004		/* size increased */
-	Note_ATTRIB = 0x00000008		/* attributes changed */
-	Note_LINK	= 0x00000010		/* link count changed */
-	Note_RENAME	= 0x00000020		/* vnode was renamed */
-	Note_REVOKE	= 0x00000040		/* vnode access was revoked */
-	Note_NONE	= 0x00000080		/* No specific vnode event: to test for EVFILT_READ activation*/
+	Note_DELETE = 0x00000001 /* vnode was removed */
+	Note_WRITE  = 0x00000002 /* data contents changed */
+	Note_EXTEND = 0x00000004 /* size increased */
+	Note_ATTRIB = 0x00000008 /* attributes changed */
+	Note_LINK   = 0x00000010 /* link count changed */
+	Note_RENAME = 0x00000020 /* vnode was renamed */
+	Note_REVOKE = 0x00000040 /* vnode access was revoked */
+	Note_NONE   = 0x00000080 /* No specific vnode event: to test for EVFILT_READ activation*/
 
-// Watch all events
+	// Watch all events
 	Note_ALLEVENTS = Note_DELETE | Note_WRITE | Note_ATTRIB | Note_RENAME
-
 
 	open_FLAGS = syscall.O_EVTONLY
 
 	// Block for 100 ms on each call to kevent
 	keventWaitTime = 100e6
-	sysCallFailed = -1
+	sysCallFailed  = -1
 )
 
 type FileEvent struct {
@@ -62,25 +61,24 @@ func (e *FileEvent) Path() string {
 	return e.Name
 }
 
-func (e* FileEvent) Flags() uint32 {
+func (e *FileEvent) Flags() uint32 {
 	return e.mask
 }
 
-
 type watchInfo struct {
-	fd int
-	flags uint32
+	fd       int
+	flags    uint32
 	realPath string
-	fInto os.FileInfo
-	childes []string
+	fInto    os.FileInfo
+	childes  []string
 	external bool
 }
 
 type watcher struct {
-	kq int
-	watchedByFD map[int]*watchInfo
+	kq            int
+	watchedByFD   map[int]*watchInfo
 	watchedByPath map[string]*watchInfo
-	done chan bool
+	done          chan bool
 }
 
 func NewWatcher() (IFSEventsWatcher, error) {
@@ -88,9 +86,9 @@ func NewWatcher() (IFSEventsWatcher, error) {
 		return nil, os.NewSyscallError("kqueue", err)
 	} else {
 		w := &watcher{
-			kq : fd,
-			watchedByFD:make(map[int]*watchInfo),
-			watchedByPath:make(map[string]*watchInfo),
+			kq:            fd,
+			watchedByFD:   make(map[int]*watchInfo),
+			watchedByPath: make(map[string]*watchInfo),
 		}
 
 		return w, nil
@@ -99,7 +97,7 @@ func NewWatcher() (IFSEventsWatcher, error) {
 
 func (this *watcher) Watch(path string, flags uint32, done <-chan bool) (<-chan IFSEvent, error) {
 	if err := this.doAdd(path, Note_ALLEVENTS); err != nil {
-		return nil, err;
+		return nil, err
 	}
 
 	events := make(chan IFSEvent)
@@ -111,7 +109,6 @@ func (this *watcher) Watch(path string, flags uint32, done <-chan bool) (<-chan 
 				log.Printf("/dev/null/errors: %s\n", err.Error())
 			}
 		}()
-
 
 		this.doReadEvents(flags, events, devNull, done)
 
@@ -126,7 +123,7 @@ func (this *watcher) Watch(path string, flags uint32, done <-chan bool) (<-chan 
 	return events, nil
 }
 
-func (this* watcher) doAdd(path string, flags uint32) error {
+func (this *watcher) doAdd(path string, flags uint32) error {
 	//Check that file exists
 	fileInfo, err := os.Lstat(path)
 	if err != nil {
@@ -136,11 +133,11 @@ func (this* watcher) doAdd(path string, flags uint32) error {
 	mode := fileInfo.Mode()
 
 	// don't watch socket
-	if mode & os.ModeSocket == os.ModeSocket {
+	if mode&os.ModeSocket == os.ModeSocket {
 		return nil
 	}
 
-	if mode & os.ModeSymlink == os.ModeSymlink {
+	if mode&os.ModeSymlink == os.ModeSymlink {
 		if path, err = filepath.EvalSymlinks(path); err != nil {
 			return err
 		}
@@ -149,16 +146,16 @@ func (this* watcher) doAdd(path string, flags uint32) error {
 		}
 	}
 
-	fd, err :=  syscall.Open(path, open_FLAGS, 0700);
+	fd, err := syscall.Open(path, open_FLAGS, 0700)
 	if fd == sysCallFailed {
 		return err
 	}
 
-	info := &watchInfo {
-		fd : fd,
-		flags : flags,
+	info := &watchInfo{
+		fd:       fd,
+		flags:    flags,
 		realPath: path,
-		fInto: fileInfo,
+		fInto:    fileInfo,
 	}
 	this.watchedByFD[fd] = info
 	this.watchedByPath[path] = info
@@ -191,7 +188,7 @@ func (this* watcher) doAdd(path string, flags uint32) error {
 	return nil
 }
 
-func (this* watcher) doDel(path string) error {
+func (this *watcher) doDel(path string) error {
 	info, found := this.watchedByPath[path]
 	if !found {
 		return errors.Newf("can't remove non-existent kevent watch for: %s", path)
@@ -204,7 +201,7 @@ func (this* watcher) doDel(path string) error {
 	success, errno := syscall.Kevent(this.kq, kbuf[:], nil, nil)
 	if success == sysCallFailed {
 		return os.NewSyscallError("kevent_rm_watch", errno)
-	} else if entryFlags & syscall.EV_ERROR == syscall.EV_ERROR {
+	} else if entryFlags&syscall.EV_ERROR == syscall.EV_ERROR {
 		return errors.New("kevent rm error")
 	}
 	syscall.Close(info.fd)
@@ -226,7 +223,7 @@ func (this *watcher) doReadEvents(flags uint32, events chan<- IFSEvent, devNull 
 	var (
 		keventbuf [10]syscall.Kevent_t // Event buffer
 		kevents   []syscall.Kevent_t   // Received events
-		twait    *syscall.Timespec    // Time to block waiting for events
+		twait     *syscall.Timespec    // Time to block waiting for events
 	)
 	kevents = keventbuf[0:0]
 	twait = new(syscall.Timespec)
@@ -236,7 +233,7 @@ func (this *watcher) doReadEvents(flags uint32, events chan<- IFSEvent, devNull 
 		// If "done" message is received
 
 		select {
-		case <- done:
+		case <-done:
 			return
 		default:
 
@@ -286,7 +283,7 @@ func (this *watcher) doReadEvents(flags uint32, events chan<- IFSEvent, devNull 
 				this.sendDirectoryChangeEvents(info.realPath, info.flags, devNull, events)
 			} else {
 				// Send the event on the events channel
-				if flags & fileEvent.mask != 0 || fileEvent.create {
+				if flags&fileEvent.mask != 0 || fileEvent.create {
 					events <- fileEvent
 				}
 			}
@@ -328,7 +325,7 @@ func (this *watcher) sendDirectoryChangeEvents(dirPath string, flags uint32, dev
 					fileEvent := new(FileEvent)
 					fileEvent.Name = filePath
 					fileEvent.create = true
-					if flags&fileEvent.mask != 0  || fileEvent.create{
+					if flags&fileEvent.mask != 0 || fileEvent.create {
 						events <- fileEvent
 					}
 				} else {
