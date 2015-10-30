@@ -14,7 +14,7 @@ func main() {
 		return
 	}
 	done := make(chan bool)
-	if events, err := watcher.Watch("/tmp", fsevents.Note_ALLEVENTS, done); err != nil {
+	if events, err := watcher.Watch("/tmp", uint32(0xFFFFFFFF), done); err != nil {
 		return
 	} else {
 		var opened = true

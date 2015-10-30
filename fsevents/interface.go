@@ -13,8 +13,6 @@ type IFSEvent interface {
 	IsAttrib() bool
 
 	Path() string
-
-	Flags() uint32
 }
 
 type IFSEventsWatcher interface {

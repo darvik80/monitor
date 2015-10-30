@@ -2,7 +2,11 @@ package fsevents
 
 import (
 	"syscall"
-	"mime"
+	"os"
+	"errors"
+	"strings"
+	"github.com/darvik80/fsevents/log"
+	"unsafe"
 )
 
 // +build linux
@@ -29,7 +33,6 @@ const (
 type fileEvent struct {
 	mask   uint32 // Mask of events
 	Name   string // File name (optional)
-	create bool   // set by fsnotify package if found new file
 }
 
 // IsCreate reports whether the FileEvent was triggered by a creation
@@ -43,13 +46,13 @@ func (e *fileEvent) IsDelete() bool {
 }
 
 // IsModify reports whether the FileEvent was triggered by a file modification
-func (e *FileEvent) IsModify() bool {
-	return (e.mask & IN_MODIFY) == IN_MODIFY || (e.mask & IN_MODIFY_SELF) ==  IN_MODIFY_SELF
+func (e *fileEvent) IsModify() bool {
+	return (e.mask & IN_MODIFY) == IN_MODIFY
 }
 
 // IsRename reports whether the FileEvent was triggered by a change name
 func (e *fileEvent) IsRename() bool {
-	return (e.mask & IN_MOVED_FROM) == IN_MOVED_FROM || (e.mask & IN_MOVED_TO) == IN_MOVED_TO
+	return (e.mask & IN_MOVED_FROM) == IN_MOVED_FROM || (e.mask & IN_MOVED_TO) == IN_MOVED_TO || (e.mask & IN_MOVE) == IN_MOVE || (e.mask & IN_MOVE_SELF) == IN_MOVE_SELF
 }
 
 // IsAttrib reports whether the FileEvent was triggered by a change in the file metadata.
@@ -79,12 +82,11 @@ type watcher struct {
 }
 
 func NewWatcher() (IFSEventsWatcher, error) {
-	if fd, err := syscall.InotifyInit() {
-		return nil, os.NewSyscallError("inotify_init", err)
+	if fd, errno := syscall.InotifyInit(); errno != nil {
+		return nil, os.NewSyscallError("inotify_init", errno)
 	} else {
 		w := &watcher{
 			fd:            fd,
-			watchedByFD:   make(map[int]*watchInfo),
 		}
 
 		return w, nil
@@ -121,8 +123,7 @@ func (this *watcher) Watch(path string, flags uint32, done <-chan bool) (<-chan 
 
 func (this *watcher) doAdd(path string, flags uint32) error {
 	//Check that file exists
-	fileInfo, err := os.Lstat(path)
-	if err != nil {
+	if _, err := os.Lstat(path); err != nil {
 		return err
 	}
 
@@ -137,7 +138,7 @@ func (this *watcher) doAdd(path string, flags uint32) error {
 }
 
 func (this *watcher) doDel(path string) error {
-	if errno := syscall.InotifyRmWatch(this.fd, this.wd); errno < 0 {
+	if res, errno := syscall.InotifyRmWatch(this.fd, uint32(this.wd)); res < 0 {
 		return os.NewSyscallError("inotify_add_watch", errno)
 	}
 
@@ -158,24 +159,24 @@ func (this *watcher) doReadEvents(flags uint32, events chan<- IFSEvent, devNull 
 
 		}
 
-		if len, errno := syscall.Read(w.fd, buf[:]); len < 0 {
+		if len, errno := syscall.Read(this.fd, buf[:]); len < 0 {
 			devNull <- os.NewSyscallError("read", errno)
 			continue
 		} else if len < syscall.SizeofInotifyEvent {
 			devNull <- errors.New("inotify: short read in readEvents()")
 			continue
-		}
+		} else {
 
 		var offset uint32 = 0
 		// We don't know how many events we just read into the buffer
 		// While the offset points to at least one whole event...
-		for offset <= uint32(n-syscall.SizeofInotifyEvent) {
+		for offset <= uint32(len-syscall.SizeofInotifyEvent) {
 			// Point "raw" to the event in the buffer
 			raw := (*syscall.InotifyEvent)(unsafe.Pointer(&buf[offset]))
 
+			nameLen := uint32(raw.Len)
 			if this.wd == int(raw.Wd) {
-				nameLen := uint32(raw.Len)
-				event := fileEvent{
+				event := &fileEvent{
 					Name: this.root,
 					mask: raw.Mask,
 				}
@@ -191,6 +192,7 @@ func (this *watcher) doReadEvents(flags uint32, events chan<- IFSEvent, devNull 
 			}
 
 			offset += syscall.SizeofInotifyEvent + nameLen
+		}
 		}
 	}
 }
