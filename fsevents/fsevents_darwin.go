@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/darvik80/fsevents/log"
+	"github.com/darvik80/monitor/log"
 	"io/ioutil"
 )
 
@@ -23,7 +23,11 @@ const (
 	Note_NONE   = 0x00000080 /* No specific vnode event: to test for EVFILT_READ activation*/
 
 	// Watch all events
-	Note_ALLEVENTS = Note_DELETE | Note_WRITE | Note_ATTRIB | Note_RENAME
+	IN_ALL_EVENTS uint32 = Note_DELETE | Note_WRITE | Note_ATTRIB | Note_RENAME
+	IN_DELETE     uint32 = Note_DELETE
+	IN_MODIFY     uint32 = Note_WRITE | Note_ATTRIB
+	IN_MOVE       uint32 = Note_RENAME
+	IN_ATTRIB     uint32 = Note_ATTRIB
 
 	open_FLAGS = syscall.O_EVTONLY
 
@@ -42,19 +46,19 @@ type FileEvent struct {
 func (e *FileEvent) IsCreate() bool { return e.create }
 
 // IsDelete reports whether the FileEvent was triggered by a delete
-func (e *FileEvent) IsDelete() bool { return (e.mask & Note_DELETE) == Note_DELETE }
+func (e *FileEvent) IsDelete() bool { return (e.mask & IN_DELETE) == IN_DELETE }
 
 // IsModify reports whether the FileEvent was triggered by a file modification
 func (e *FileEvent) IsModify() bool {
-	return ((e.mask&Note_WRITE) == Note_WRITE || (e.mask&Note_ATTRIB) == Note_ATTRIB)
+	return (e.mask & IN_MODIFY) > 0
 }
 
 // IsRename reports whether the FileEvent was triggered by a change name
-func (e *FileEvent) IsRename() bool { return (e.mask & Note_RENAME) == Note_RENAME }
+func (e *FileEvent) IsRename() bool { return (e.mask & IN_MOVE) == IN_MOVE }
 
 // IsAttrib reports whether the FileEvent was triggered by a change in the file metadata.
 func (e *FileEvent) IsAttrib() bool {
-	return (e.mask & Note_ATTRIB) == Note_ATTRIB
+	return (e.mask & IN_ATTRIB) == IN_ATTRIB
 }
 
 func (e *FileEvent) Path() string {
@@ -95,8 +99,8 @@ func NewWatcher() (IFSEventsWatcher, error) {
 	}
 }
 
-func (this *watcher) Watch(path string, flags uint32, done <-chan bool) (<-chan IFSEvent, error) {
-	if err := this.doAdd(path, Note_ALLEVENTS); err != nil {
+func (this *watcher) Watch(path string, done <-chan bool) (<-chan IFSEvent, error) {
+	if err := this.doAdd(path, IN_ALL_EVENTS); err != nil {
 		return nil, err
 	}
 
@@ -110,7 +114,7 @@ func (this *watcher) Watch(path string, flags uint32, done <-chan bool) (<-chan 
 			}
 		}()
 
-		this.doReadEvents(flags, events, devNull, done)
+		this.doReadEvents(IN_ALL_EVENTS, events, devNull, done)
 
 		this.doDel(path)
 
@@ -231,7 +235,6 @@ func (this *watcher) doReadEvents(flags uint32, events chan<- IFSEvent, devNull 
 
 	for {
 		// If "done" message is received
-
 		select {
 		case <-done:
 			return
@@ -320,7 +323,7 @@ func (this *watcher) sendDirectoryChangeEvents(dirPath string, flags uint32, dev
 		for _, fileInfo := range files {
 			filePath := filepath.Join(dirPath, fileInfo.Name())
 			if _, found := this.watchedByPath[filePath]; !found {
-				if err := this.doAdd(filePath, Note_ALLEVENTS); err == nil {
+				if err := this.doAdd(filePath, IN_ALL_EVENTS); err == nil {
 					// Send create event
 					fileEvent := new(FileEvent)
 					fileEvent.Name = filePath

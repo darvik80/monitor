@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/darvik80/fsevents/fsevents"
-	"github.com/darvik80/fsevents/log"
+	"github.com/darvik80/monitor/fsevents"
+	"github.com/darvik80/monitor/log"
 	"time"
 )
 
@@ -14,7 +14,7 @@ func main() {
 		return
 	}
 	done := make(chan bool)
-	if events, err := watcher.Watch("/tmp", uint32(0xFFFFFFFF), done); err != nil {
+	if events, err := watcher.Watch("/tmp", done); err != nil {
 		return
 	} else {
 		var opened = true

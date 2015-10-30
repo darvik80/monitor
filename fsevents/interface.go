@@ -16,5 +16,5 @@ type IFSEvent interface {
 }
 
 type IFSEventsWatcher interface {
-	Watch(path string, flags uint32, done <-chan bool) (<-chan IFSEvent, error)
+	Watch(path string, done <-chan bool) (<-chan IFSEvent, error)
 }

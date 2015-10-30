@@ -1,18 +1,18 @@
 package fsevents
 
 import (
-	"syscall"
-	"os"
 	"errors"
+	"github.com/darvik80/monitor/log"
+	"os"
 	"strings"
-	"github.com/darvik80/fsevents/log"
+	"syscall"
 	"unsafe"
 )
 
 // +build linux
 
 const (
-// Events
+	// Events
 	IN_ACCESS        uint32 = syscall.IN_ACCESS
 	IN_ALL_EVENTS    uint32 = syscall.IN_ALL_EVENTS
 	IN_ATTRIB        uint32 = syscall.IN_ATTRIB
@@ -31,8 +31,8 @@ const (
 )
 
 type fileEvent struct {
-	mask   uint32 // Mask of events
-	Name   string // File name (optional)
+	mask uint32 // Mask of events
+	Name string // File name (optional)
 }
 
 // IsCreate reports whether the FileEvent was triggered by a creation
@@ -42,7 +42,7 @@ func (e *fileEvent) IsCreate() bool {
 
 // IsDelete reports whether the FileEvent was triggered by a delete
 func (e *fileEvent) IsDelete() bool {
-	return (e.mask & IN_DELETE) == IN_DELETE || (e.mask & IN_DELETE_SELF) == IN_DELETE_SELF
+	return (e.mask&IN_DELETE) == IN_DELETE || (e.mask&IN_DELETE_SELF) == IN_DELETE_SELF
 }
 
 // IsModify reports whether the FileEvent was triggered by a file modification
@@ -52,7 +52,7 @@ func (e *fileEvent) IsModify() bool {
 
 // IsRename reports whether the FileEvent was triggered by a change name
 func (e *fileEvent) IsRename() bool {
-	return (e.mask & IN_MOVED_FROM) == IN_MOVED_FROM || (e.mask & IN_MOVED_TO) == IN_MOVED_TO || (e.mask & IN_MOVE) == IN_MOVE || (e.mask & IN_MOVE_SELF) == IN_MOVE_SELF
+	return (e.mask&IN_MOVED_FROM) == IN_MOVED_FROM || (e.mask&IN_MOVED_TO) == IN_MOVED_TO || (e.mask&IN_MOVE) == IN_MOVE || (e.mask&IN_MOVE_SELF) == IN_MOVE_SELF
 }
 
 // IsAttrib reports whether the FileEvent was triggered by a change in the file metadata.
@@ -69,16 +69,16 @@ func (e *fileEvent) Flags() uint32 {
 }
 
 type watchInfo struct {
-	fd       int
-	flags    uint32
-	path string
+	fd    int
+	flags uint32
+	path  string
 }
 
 type watcher struct {
-	fd            int
+	fd   int
 	root string
-	wd int
-	done          chan bool
+	wd   int
+	done chan bool
 }
 
 func NewWatcher() (IFSEventsWatcher, error) {
@@ -86,15 +86,15 @@ func NewWatcher() (IFSEventsWatcher, error) {
 		return nil, os.NewSyscallError("inotify_init", errno)
 	} else {
 		w := &watcher{
-			fd:            fd,
+			fd: fd,
 		}
 
 		return w, nil
 	}
 }
 
-func (this *watcher) Watch(path string, flags uint32, done <-chan bool) (<-chan IFSEvent, error) {
-	if err := this.doAdd(path, syscall.IN_ALL_EVENTS); err != nil {
+func (this *watcher) Watch(path string, done <-chan bool) (<-chan IFSEvent, error) {
+	if err := this.doAdd(path, IN_ALL_EVENTS); err != nil {
 		return nil, err
 	}
 
@@ -167,32 +167,32 @@ func (this *watcher) doReadEvents(flags uint32, events chan<- IFSEvent, devNull 
 			continue
 		} else {
 
-		var offset uint32 = 0
-		// We don't know how many events we just read into the buffer
-		// While the offset points to at least one whole event...
-		for offset <= uint32(len-syscall.SizeofInotifyEvent) {
-			// Point "raw" to the event in the buffer
-			raw := (*syscall.InotifyEvent)(unsafe.Pointer(&buf[offset]))
+			var offset uint32 = 0
+			// We don't know how many events we just read into the buffer
+			// While the offset points to at least one whole event...
+			for offset <= uint32(len-syscall.SizeofInotifyEvent) {
+				// Point "raw" to the event in the buffer
+				raw := (*syscall.InotifyEvent)(unsafe.Pointer(&buf[offset]))
 
-			nameLen := uint32(raw.Len)
-			if this.wd == int(raw.Wd) {
-				event := &fileEvent{
-					Name: this.root,
-					mask: raw.Mask,
+				nameLen := uint32(raw.Len)
+				if this.wd == int(raw.Wd) {
+					event := &fileEvent{
+						Name: this.root,
+						mask: raw.Mask,
+					}
+
+					if nameLen > 0 {
+						// Point "bytes" at the first byte of the filename
+						bytes := (*[syscall.PathMax]byte)(unsafe.Pointer(&buf[offset+syscall.SizeofInotifyEvent]))
+						// The filename is padded with NUL bytes. TrimRight() gets rid of those.
+						event.Name += "/" + strings.TrimRight(string(bytes[0:nameLen]), "\000")
+					}
+
+					events <- event
 				}
 
-				if nameLen > 0 {
-					// Point "bytes" at the first byte of the filename
-					bytes := (*[syscall.PathMax]byte)(unsafe.Pointer(&buf[offset + syscall.SizeofInotifyEvent]))
-					// The filename is padded with NUL bytes. TrimRight() gets rid of those.
-					event.Name += "/" + strings.TrimRight(string(bytes[0:nameLen]), "\000")
-				}
-
-				events <- event
+				offset += syscall.SizeofInotifyEvent + nameLen
 			}
-
-			offset += syscall.SizeofInotifyEvent + nameLen
-		}
 		}
 	}
 }
