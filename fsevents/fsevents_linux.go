@@ -7,6 +7,7 @@ import (
 	"strings"
 	"syscall"
 	"unsafe"
+	"sync"
 )
 
 // +build linux
@@ -102,20 +103,39 @@ func (this *watcher) Watch(path string, done <-chan bool) (<-chan IFSEvent, erro
 	go func() {
 		defer close(events)
 		devNull := make(chan error)
+
+		wg := sync.WaitGroup{}
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			for err := range devNull {
 				log.Printf("/dev/null/errors: %s\n", err.Error())
 			}
 		}()
 
-		this.doReadEvents(flags, events, devNull, done)
+		wg.Add(1)
+		go func() {
+			defer func() {
+				close(devNull)
+				wg.Done()
+			}()
 
-		this.doDel(path)
+			this.doReadEvents(IN_ALL_EVENTS, events, devNull, done)
+		}()
 
-		errno := syscall.Close(this.fd)
-		if errno != nil {
-			devNull <- os.NewSyscallError("close", errno)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			<- done
+			this.doDel()
+
+			errno := syscall.Close(this.fd)
+			if errno != nil {
+				devNull <- os.NewSyscallError("close", errno)
+			}
+		}()
+		wg.Wait()
 	}()
 
 	return events, nil
@@ -137,7 +157,7 @@ func (this *watcher) doAdd(path string, flags uint32) error {
 	return nil
 }
 
-func (this *watcher) doDel(path string) error {
+func (this *watcher) doDel() error {
 	if res, errno := syscall.InotifyRmWatch(this.fd, uint32(this.wd)); res < 0 {
 		return os.NewSyscallError("inotify_add_watch", errno)
 	}

@@ -5,17 +5,27 @@ import (
 	"os"
 )
 
-var logger = logging.MustGetLogger("fsevents")
+var logger = logging.MustGetLogger("torrent-monitor")
 
-var format = logging.MustStringFormatter(
-	"%{color}%{time:15:04:05.000} %{shortfunc} ▶ %{level:.4s} %{id:03x}%{color:reset} %{message}",
+var formatConsole = logging.MustStringFormatter(
+	"%{color}%{time:15:04:05.000} ▶ %{level:.4s} %{id:03x}%{color:reset} %{message}",
 )
 
-func Setup() {
-	backend := logging.NewLogBackend(os.Stderr, "", 0)
-	backendFormatter := logging.NewBackendFormatter(backend, format)
-	logging.SetBackend(backendFormatter)
-
+func Setup(path *string) {
+	if path == nil {
+		backend := logging.NewLogBackend(os.Stderr, "", 0)
+		backendFormatter := logging.NewBackendFormatter(backend, formatConsole)
+		logging.SetBackend(backendFormatter)
+	} else {
+		file, err := os.OpenFile(*path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, os.FileMode(0666))
+		if err != nil {
+			logger.Critical(err.Error())
+			return
+		}
+		backend := logging.NewLogBackend(file, "", 0)
+		backendFormatter := logging.NewBackendFormatter(backend, formatConsole)
+		logging.SetBackend(backendFormatter)
+	}
 }
 
 // Fatalf is equivalent to CRITICAL followed by a call to os.Exit(1).

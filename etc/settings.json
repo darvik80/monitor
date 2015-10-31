@@ -1,0 +1,6 @@
+{
+  "daemon": true,
+  "log-file": "/var/log/torrent-monitor.log",
+  "watch-dir": "/home/worker/Downloads",
+  "torrents-dir": "/home/worker/transmission/torrents"
+}
